@@ -41,12 +41,18 @@ function NavItem({
     <button
       onClick={onClick}
       className={cn(
-        "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+        "group relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
         active
-          ? "bg-bg-muted text-fg font-medium"
+          ? "bg-accent/10 text-fg font-medium"
           : "text-fg-muted hover:bg-bg-muted/60 hover:text-fg",
       )}
     >
+      {active && (
+        <span
+          className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r-sm bg-accent"
+          aria-hidden
+        />
+      )}
       <Icon
         size={16}
         className={cn(active ? "text-accent" : "text-fg-muted")}
@@ -55,7 +61,14 @@ function NavItem({
         {label}
       </span>
       {count !== undefined && count > 0 && (
-        <span className="text-xs text-fg-subtle">{count}</span>
+        <span
+          className={cn(
+            "text-xs tabular-nums",
+            active ? "text-fg-muted" : "text-fg-subtle",
+          )}
+        >
+          {count}
+        </span>
       )}
     </button>
   );

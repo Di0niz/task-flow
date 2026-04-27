@@ -445,7 +445,7 @@ export function TaskNode({ id, depth, autoFocus }: Props) {
               className={cn(
                 "placeholder min-w-[40px] max-w-full text-[16px] leading-[24px] outline-none break-words whitespace-pre-wrap",
                 "transition-colors duration-300",
-                task.completed && "line-through decoration-fg-subtle text-fg-subtle",
+                task.completed && "line-through decoration-fg-muted/70 text-fg-muted",
               )}
             >
               {task.title}
@@ -490,23 +490,24 @@ export function TaskNode({ id, depth, autoFocus }: Props) {
                 aria-label="зависшая задача"
               />
             )}
+
+            {totalLabel && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-mono text-[11px] tabular-nums",
+                  isTimerHere ? "text-danger" : "text-fg-muted/80",
+                )}
+                title={timeTooltip}
+              >
+                <Clock size={11} strokeWidth={1.75} className="opacity-70" />
+                {totalLabel}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Elapsed time + row actions */}
+        {/* Row actions */}
         <div className="flex items-center gap-1.5">
-          {totalLabel && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 font-mono text-[11px] tabular-nums",
-                isTimerHere ? "text-danger" : "text-fg-subtle",
-              )}
-              title={timeTooltip}
-            >
-              <Clock size={11} strokeWidth={1.75} className="opacity-70" />
-              {totalLabel}
-            </span>
-          )}
           <div className="flex items-center gap-0.5">
             {isTimerHere ? (
               <RowAction

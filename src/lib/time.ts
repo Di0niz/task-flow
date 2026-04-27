@@ -35,3 +35,63 @@ export function formatDurationShort(ms: number): string {
   if (hours < 10 && remMin > 0) return `${hours}h ${remMin}min`;
   return `${hours}h`;
 }
+
+/**
+ * Parse a user-entered duration string into milliseconds.
+ * Supports:
+ *   - `45s`, `30sec`
+ *   - `15m`, `15min`, `15мин`
+ *   - `2h`, `1.5h`, `2ч`
+ *   - `1h 30m`, `1h30m`, `1ч 30мин`
+ *   - `1:30` → 1h 30min; `1:30:15` → 1h 30min 15s
+ *   - bare number → minutes (`90` → 90 min)
+ * Returns `null` on empty/invalid input or a negative/zero result.
+ */
+export function parseDurationInput(raw: string): number | null {
+  const input = raw.trim().toLowerCase();
+  if (!input) return null;
+
+  // Colon form: H:MM or H:MM:SS
+  const colon = input.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/);
+  if (colon) {
+    const h = Number(colon[1]);
+    const m = Number(colon[2]);
+    const s = colon[3] ? Number(colon[3]) : 0;
+    const ms = ((h * 60 + m) * 60 + s) * 1000;
+    return ms > 0 ? ms : null;
+  }
+
+  // Bare number → minutes
+  if (/^\d+(\.\d+)?$/.test(input)) {
+    const ms = Math.round(parseFloat(input) * 60_000);
+    return ms > 0 ? ms : null;
+  }
+
+  // Unit form: sequence of `<number><unit>` tokens. Units:
+  //   h / ч   — hours
+  //   m / min / мин — minutes
+  //   s / sec / с   — seconds
+  const unitRe = /(\d+(?:\.\d+)?)\s*(h|ч|min|мин|m|sec|с|s)\b/g;
+  const tokens = input.match(unitRe);
+  if (!tokens) return null;
+
+  // Reject if there's leftover non-whitespace content we didn't consume.
+  const strippedLen = input.replace(/\s+/g, "").length;
+  const consumedNoSpace = tokens.reduce(
+    (acc, t) => acc + t.replace(/\s+/g, "").length,
+    0,
+  );
+  if (consumedNoSpace !== strippedLen) return null;
+
+  let totalMs = 0;
+  for (const token of tokens) {
+    const m = token.match(/(\d+(?:\.\d+)?)\s*(h|ч|min|мин|m|sec|с|s)/)!;
+    const value = parseFloat(m[1]);
+    const unit = m[2];
+    if (unit === "h" || unit === "ч") totalMs += value * 3_600_000;
+    else if (unit === "s" || unit === "sec" || unit === "с") totalMs += value * 1_000;
+    else totalMs += value * 60_000; // m, min, мин
+  }
+  const rounded = Math.round(totalMs);
+  return rounded > 0 ? rounded : null;
+}

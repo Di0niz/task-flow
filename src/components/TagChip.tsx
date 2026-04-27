@@ -35,10 +35,11 @@ export function TagChip({
   return (
     <span
       className={cn(
-        "chip",
+        "chip transition-shadow",
         color,
         onClick && "cursor-pointer hover:brightness-95",
-        active && "ring-1 ring-current",
+        active &&
+          "ring-2 ring-current ring-offset-1 ring-offset-bg font-semibold",
         size === "xs" && "text-[10px] px-1 py-[1px]",
       )}
       onClick={onClick}

@@ -101,6 +101,9 @@ interface AppState {
   startTimer(taskId: TaskId): void;
   stopTimer(): void;
   toggleTimer(taskId: TaskId): void;
+  /** Append a manually-entered session (used when timer wasn't running). */
+  addManualSession(taskId: TaskId, durationMs: number): void;
+  removeSession(taskId: TaskId, sessionId: string): void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -927,6 +930,44 @@ export const useAppStore = create<AppState>()(
         const { activeTimer, startTimer, stopTimer } = get();
         if (activeTimer?.taskId === taskId) stopTimer();
         else startTimer(taskId);
+      },
+      addManualSession(taskId, durationMs) {
+        if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+          const now = Date.now();
+          const session: TimerSession = {
+            id: nanoid(8),
+            startedAt: now - durationMs,
+            endedAt: now,
+            durationMs,
+          };
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: {
+                ...t,
+                sessions: [...t.sessions, session],
+                updatedAt: now,
+              },
+            },
+          };
+        });
+      },
+      removeSession(taskId, sessionId) {
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+          const next = t.sessions.filter((s) => s.id !== sessionId);
+          if (next.length === t.sessions.length) return state;
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, sessions: next, updatedAt: Date.now() },
+            },
+          };
+        });
       },
     }),
     {

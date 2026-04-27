@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useAppStore, selectZoomedTaskId } from "../store/useAppStore";
 import { totalTaskMs } from "../lib/aggregate";
-import { formatDurationShort } from "../lib/time";
+import { formatDurationShort, parseDurationInput } from "../lib/time";
 import { useNowTick } from "../hooks/useNowTick";
 import { cn, todayIso } from "../lib/utils";
 import { PROJECT_COLORS, type TaskId } from "../types";
@@ -32,6 +32,8 @@ export function Inspector() {
   const setFocusedTask = useAppStore((s) => s.setFocusedTask);
   const clearZoom = useAppStore((s) => s.clearZoom);
   const zoomInto = useAppStore((s) => s.zoomInto);
+  const addManualSession = useAppStore((s) => s.addManualSession);
+  const removeSession = useAppStore((s) => s.removeSession);
 
   const task = activeId ? tasks[activeId] : null;
 
@@ -49,6 +51,8 @@ export function Inspector() {
   }, [task?.id, task?.notes]);
 
   const [newTagDraft, setNewTagDraft] = useState("");
+  const [manualTimeDraft, setManualTimeDraft] = useState("");
+  const [manualTimeError, setManualTimeError] = useState(false);
 
   if (!task) return null;
 
@@ -91,31 +95,44 @@ export function Inspector() {
     updateTask(task.id, { tags: task.tags.filter((t) => t !== tag) });
   };
 
+  const submitManualTime = () => {
+    const ms = parseDurationInput(manualTimeDraft);
+    if (ms === null) {
+      if (manualTimeDraft.trim()) setManualTimeError(true);
+      return;
+    }
+    addManualSession(task.id, ms);
+    setManualTimeDraft("");
+    setManualTimeError(false);
+  };
+
   return (
     <aside className="hidden lg:flex h-full w-80 shrink-0 flex-col border-l border-border bg-bg-soft">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <span className="text-[11px] uppercase tracking-wider text-fg-subtle">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
           {focusedTaskId === task.id ? "Фокус" : "Детали задачи"}
         </span>
         <button
           onClick={handleClose}
-          className="grid h-6 w-6 place-items-center rounded text-fg-subtle hover:bg-bg-muted hover:text-fg-muted transition-colors"
+          className="grid h-7 w-7 place-items-center rounded text-fg-muted hover:bg-bg-muted hover:text-fg transition-colors"
           title="Закрыть"
           aria-label="Закрыть"
         >
-          <X size={13} />
+          <X size={14} />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* Title */}
+        {/* Title — always shown as a labeled field so the inspector has a clear
+            anchor even when zoomed. Styled as a form field, not a headline. */}
+        <SectionLabel>Название</SectionLabel>
         <div className="flex items-start gap-2">
           <AutoSizeTextarea
             key={task.id}
             defaultValue={task.title}
             placeholder="Без названия"
-            className="flex-1 min-w-0 resize-none bg-transparent text-[15px] font-medium leading-[22px] outline-none placeholder:text-fg-subtle"
+            className="flex-1 min-w-0 resize-none rounded bg-transparent px-1.5 py-1 text-[13px] leading-[20px] text-fg outline-none placeholder:text-fg-subtle hover:bg-bg-muted/60 focus:bg-bg-muted/70 transition-colors"
             onBlur={handleTitleBlur}
           />
           {isUrl && (
@@ -123,7 +140,7 @@ export function Inspector() {
               href={task.title.trim()}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-1 shrink-0 text-fg-subtle hover:text-accent transition-colors"
+              className="mt-1.5 shrink-0 text-fg-muted hover:text-accent transition-colors"
               title="Открыть в новой вкладке"
             >
               <ExternalLink size={13} />
@@ -132,11 +149,12 @@ export function Inspector() {
         </div>
 
         {/* Meta row */}
-        <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
           {project && projectHex && (
             <button
-              className="inline-flex items-center gap-1.5 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg-muted hover:bg-bg-muted transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg hover:bg-bg-muted transition-colors"
               onClick={() => useAppStore.getState().setView({ kind: "project", id: project.id })}
+              title={`Открыть проект «${project.name}»`}
             >
               <span
                 className="inline-block h-2 w-2 shrink-0 rounded-full"
@@ -146,35 +164,34 @@ export function Inspector() {
             </button>
           )}
           {!project && task.projectId === null && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg-subtle">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg-muted">
               Входящие
             </span>
           )}
           {parent && (
             <button
-              className="inline-flex max-w-[180px] items-center gap-1 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg-muted hover:bg-bg-muted transition-colors"
+              className="group/parent inline-flex max-w-[220px] items-center gap-1 rounded-md bg-bg-muted/70 px-2 py-0.5 text-fg-muted hover:bg-bg-muted hover:text-fg transition-colors"
               onClick={() => {
-                // Navigate up to the parent: clear zoom, then zoom to parent.
                 clearZoom();
                 zoomInto(parent.id);
               }}
-              title="К родителю"
+              title={`К родителю: ${parent.title || "Без названия"}`}
+              aria-label={`К родительской задаче: ${parent.title || "Без названия"}`}
             >
-              <ChevronRight size={11} className="shrink-0 rotate-180" />
+              <ChevronRight size={11} className="shrink-0 rotate-180 opacity-60 group-hover/parent:opacity-100" />
+              <span className="text-fg-subtle">В:</span>
               <span className="truncate">{parent.title || "Без названия"}</span>
             </button>
           )}
         </div>
 
         {/* Dates row */}
-        <div className="mt-4">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Даты
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 text-[12px] text-fg-muted">
-              <CalendarDays size={12} className="shrink-0 text-fg-subtle" />
-              <span className="w-14 shrink-0 text-fg-subtle">Срок</span>
+        <div className="mt-5">
+          <SectionLabel>Даты</SectionLabel>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-[12px] text-fg">
+              <CalendarDays size={12} className="shrink-0 text-fg-muted" />
+              <span className="w-14 shrink-0 text-fg-muted">Срок</span>
               <input
                 type="date"
                 value={task.dueDate ?? ""}
@@ -186,36 +203,48 @@ export function Inspector() {
               {task.dueDate && (
                 <button
                   onClick={() => updateTask(task.id, { dueDate: undefined })}
-                  className="shrink-0 text-fg-subtle hover:text-fg-muted transition-colors"
+                  className="shrink-0 text-fg-muted hover:text-fg transition-colors"
                   title="Очистить дату"
                 >
                   <X size={11} />
                 </button>
               )}
             </label>
-            <button
-              onClick={() => toggleTodayFlag(task.id)}
-              className={cn(
-                "flex items-center gap-2 rounded px-0 py-0.5 text-left text-[12px] transition-colors",
-                todayFlagged
-                  ? "text-amber-500 hover:text-amber-400"
-                  : "text-fg-muted hover:text-fg",
-              )}
-              title={todayFlagged ? "Убрать из «Сегодня»" : "Добавить в «Сегодня»"}
-            >
-              <Star size={12} fill={todayFlagged ? "currentColor" : "none"} />
-              <span className="w-14 shrink-0 text-fg-subtle">Сегодня</span>
-              <span>{todayFlagged ? "да" : "нет"}</span>
-            </button>
+            <div className="flex items-center gap-2 text-[12px] text-fg">
+              <Star
+                size={12}
+                className={cn(
+                  "shrink-0",
+                  todayFlagged ? "text-amber-400" : "text-fg-muted",
+                )}
+                fill={todayFlagged ? "currentColor" : "none"}
+              />
+              <span className="w-14 shrink-0 text-fg-muted">Сегодня</span>
+              <button
+                role="switch"
+                aria-checked={todayFlagged}
+                onClick={() => toggleTodayFlag(task.id)}
+                className={cn(
+                  "ml-auto inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+                  todayFlagged ? "bg-amber-400" : "bg-bg-muted ring-1 ring-inset ring-border",
+                )}
+                title={todayFlagged ? "Убрать из «Сегодня»" : "Добавить в «Сегодня»"}
+                aria-label="Флаг «Сегодня»"
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform",
+                    todayFlagged ? "translate-x-3.5" : "translate-x-0.5",
+                  )}
+                />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Tags */}
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            <TagIcon size={10} />
-            <span>Теги</span>
-          </div>
+        <div className="mt-5">
+          <SectionLabel icon={<TagIcon size={10} />}>Теги</SectionLabel>
           <div className="flex flex-wrap gap-1">
             {task.tags.map((t) => (
               <span
@@ -225,7 +254,7 @@ export function Inspector() {
                 <span>#{t}</span>
                 <button
                   onClick={() => removeTag(t)}
-                  className="grid h-3 w-3 place-items-center rounded text-fg-subtle opacity-0 group-hover/tag:opacity-100 hover:text-fg transition-opacity"
+                  className="grid h-3 w-3 place-items-center rounded text-fg-muted opacity-0 group-hover/tag:opacity-100 hover:text-fg transition-opacity"
                   title={`Удалить тег #${t}`}
                   aria-label={`Удалить тег ${t}`}
                 >
@@ -244,76 +273,135 @@ export function Inspector() {
               }}
               onBlur={addTag}
               placeholder="+ тег"
-              className="min-w-[60px] flex-1 rounded bg-transparent px-1 py-0.5 text-[11px] outline-none placeholder:text-fg-subtle focus:bg-bg-muted/70"
+              className="min-w-[60px] flex-1 rounded bg-transparent px-1 py-0.5 text-[11px] text-fg outline-none placeholder:text-fg-muted focus:bg-bg-muted/70"
             />
           </div>
         </div>
 
         {/* Notes */}
-        <div className="mt-4">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Заметки
-          </div>
+        <div className="mt-5">
+          <SectionLabel>Заметки</SectionLabel>
           <textarea
             value={notesDraft}
             onChange={(e) => setNotesDraft(e.target.value)}
             onBlur={commitNotes}
             placeholder="Добавить заметку…"
-            rows={4}
-            className="w-full resize-y rounded-md border border-transparent bg-bg px-2.5 py-2 text-[12px] leading-[18px] text-fg outline-none placeholder:text-fg-subtle hover:border-border focus:border-border-strong transition-colors"
+            rows={notesDraft ? 4 : 2}
+            className="w-full resize-y rounded-md border border-border bg-bg px-2.5 py-2 text-[12px] leading-[18px] text-fg outline-none placeholder:text-fg-muted hover:border-border-strong focus:border-border-strong transition-colors"
           />
         </div>
 
         {/* Time / sessions */}
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            <Timer size={10} />
-            <span>Время</span>
-          </div>
-          <div className="flex items-baseline justify-between text-[12px]">
-            <span className="text-fg-subtle">Всего по дереву</span>
+        <div className="mt-5">
+          <SectionLabel icon={<Timer size={10} />}>Время</SectionLabel>
+
+          {/* Total — prominently displayed */}
+          <div className="flex items-baseline justify-between">
+            <span className="text-[12px] text-fg-muted">Всего</span>
             <span
               className={cn(
-                "font-mono tabular-nums",
+                "font-mono tabular-nums text-[14px] font-medium",
                 isTimerHere ? "text-danger" : "text-fg",
               )}
             >
               {formatDurationShort(totalMs) || "—"}
             </span>
           </div>
+
+          {/* Sessions */}
           {task.sessions.length > 0 && (
-            <ul className="mt-2 flex flex-col gap-1 text-[11px]">
-              {task.sessions
-                .slice()
-                .sort((a, b) => b.startedAt - a.startedAt)
-                .slice(0, 8)
-                .map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between rounded px-1 py-0.5 text-fg-subtle hover:bg-bg-muted/60"
-                  >
-                    <span>{formatRelative(s.startedAt)}</span>
-                    <span className="font-mono tabular-nums text-fg-muted">
-                      {formatDurationShort(s.durationMs) || "0s"}
-                    </span>
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+                <span>Сессии</span>
+                <span className="tabular-nums">{task.sessions.length}</span>
+              </div>
+              <ul className="flex flex-col gap-0.5 text-[11px]">
+                {task.sessions
+                  .slice()
+                  .sort((a, b) => b.startedAt - a.startedAt)
+                  .slice(0, 8)
+                  .map((s) => (
+                    <li
+                      key={s.id}
+                      className="group/session flex items-center justify-between rounded px-1 py-0.5 text-fg-muted hover:bg-bg-muted/60"
+                    >
+                      <span>{formatRelative(s.startedAt)}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-mono tabular-nums text-fg">
+                          {formatDurationShort(s.durationMs) || "0s"}
+                        </span>
+                        <button
+                          onClick={() => removeSession(task.id, s.id)}
+                          className="grid h-3.5 w-3.5 place-items-center rounded text-fg-muted opacity-0 group-hover/session:opacity-100 hover:text-fg transition-opacity"
+                          title="Удалить сессию"
+                          aria-label="Удалить сессию"
+                        >
+                          <X size={10} />
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                {task.sessions.length > 8 && (
+                  <li className="px-1 text-[10px] text-fg-muted">
+                    …и ещё {task.sessions.length - 8}
                   </li>
-                ))}
-              {task.sessions.length > 8 && (
-                <li className="px-1 text-[10px] text-fg-subtle">
-                  …и ещё {task.sessions.length - 8}
-                </li>
-              )}
-            </ul>
+                )}
+              </ul>
+            </div>
           )}
+
+          {/* Manual time input */}
+          <div className="mt-3">
+            <div className="flex items-center gap-1">
+              <input
+                value={manualTimeDraft}
+                onChange={(e) => {
+                  setManualTimeDraft(e.target.value);
+                  if (manualTimeError) setManualTimeError(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitManualTime();
+                  }
+                }}
+                onBlur={() => {
+                  if (manualTimeDraft.trim()) submitManualTime();
+                }}
+                placeholder="Добавить время"
+                className={cn(
+                  "flex-1 min-w-0 rounded-md border bg-bg px-2 py-1 text-[11px] text-fg outline-none placeholder:text-fg-muted transition-colors",
+                  manualTimeError
+                    ? "border-danger/60 focus:border-danger"
+                    : "border-border hover:border-border-strong focus:border-border-strong",
+                )}
+                title="Добавить время вручную, если забыли запустить таймер"
+              />
+              <button
+                onClick={submitManualTime}
+                disabled={!manualTimeDraft.trim()}
+                className="grid h-6 w-6 place-items-center rounded-md border border-border bg-bg text-fg-muted hover:border-border-strong hover:bg-bg-muted hover:text-fg disabled:opacity-40 disabled:hover:bg-bg disabled:hover:text-fg-muted disabled:hover:border-border transition-colors"
+                title="Добавить время"
+                aria-label="Добавить время"
+              >
+                <Check size={12} />
+              </button>
+            </div>
+            <p className="mt-1 px-0.5 text-[10px] text-fg-muted">
+              Форматы: <span className="font-mono">30m</span> ·{" "}
+              <span className="font-mono">1h 15m</span> ·{" "}
+              <span className="font-mono">1:30</span>
+            </p>
+          </div>
         </div>
 
         {/* Footer meta */}
-        <div className="mt-6 border-t border-border pt-3 text-[10px] text-fg-subtle space-y-0.5">
+        <div className="mt-6 border-t border-border pt-3 text-[10px] text-fg-muted space-y-0.5">
           <div>
-            Создана {formatRelative(task.createdAt)}
+            Создана <span className="text-fg-subtle">·</span> {formatRelative(task.createdAt)}
           </div>
           <div>
-            Изменена {formatRelative(task.updatedAt)}
+            Изменена <span className="text-fg-subtle">·</span> {formatRelative(task.updatedAt)}
           </div>
           {task.completed && task.completedAt && (
             <div className="inline-flex items-center gap-1 text-success">
@@ -324,6 +412,21 @@ export function Inspector() {
         </div>
       </div>
     </aside>
+  );
+}
+
+function SectionLabel({
+  children,
+  icon,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+      {icon}
+      <span>{children}</span>
+    </div>
   );
 }
 

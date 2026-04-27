@@ -177,7 +177,7 @@ export function TaskView() {
   if (zoomedId) {
     const zt = tasks[zoomedId];
     title = zt?.title || "Без названия";
-    subtitle = "Подзадачи";
+    subtitle = undefined;
     parentIdForInsert = zoomedId;
     projectIdForInsert = zt?.projectId ?? null;
   } else if (view.kind === "project") {
@@ -258,7 +258,7 @@ export function TaskView() {
               )}
             </div>
             {subtitle && (
-              <p className="mt-0.5 text-xs text-fg-subtle">{subtitle}</p>
+              <p className="mt-0.5 text-xs text-fg-muted">{subtitle}</p>
             )}
           </div>
 
@@ -278,8 +278,8 @@ export function TaskView() {
               className={cn(
                 "chip transition-colors",
                 filter.tag === null
-                  ? "bg-bg-muted text-fg-muted"
-                  : "text-fg-subtle hover:text-fg-muted",
+                  ? "bg-fg/10 text-fg font-medium"
+                  : "text-fg-muted hover:bg-bg-muted/60",
               )}
               onClick={() => setFilter({ tag: null })}
             >
@@ -446,7 +446,7 @@ function CompletedTodayFold({ ids }: { ids: TaskId[] }) {
                   title="Вернуть в активные"
                   aria-label="Вернуть в активные"
                 />
-                <span className="min-w-0 flex-1 truncate text-fg-subtle line-through decoration-fg-subtle/60">
+                <span className="min-w-0 flex-1 truncate text-fg-muted line-through decoration-fg-muted/50">
                   {t.title || "Без названия"}
                 </span>
                 <button
@@ -546,14 +546,17 @@ function HeaderToolbar({
 
       <button
         className={cn(
-          itemClass,
-          showCompleted && "text-fg-muted bg-bg-muted/50",
+          "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors",
+          showCompleted
+            ? "bg-fg/10 text-fg font-medium"
+            : "text-fg-muted hover:bg-bg-muted/70 hover:text-fg",
         )}
         onClick={onToggleCompleted}
+        aria-pressed={showCompleted}
         title={
           completedTodayGlobal > completedTodayInView
             ? `Сегодня здесь: ${completedTodayInView} · всего сегодня: ${completedTodayGlobal}`
-            : `Выполнено сегодня: ${completedTodayInView}`
+            : `Показывать выполненные сегодня (${completedTodayInView})`
         }
       >
         {showCompleted ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -563,8 +566,8 @@ function HeaderToolbar({
             className={cn(
               "-mr-0.5 rounded px-1 text-[10px] tabular-nums",
               showCompleted
-                ? "bg-bg text-fg-muted"
-                : "bg-bg-muted text-fg-subtle",
+                ? "bg-bg text-fg"
+                : "bg-bg-muted text-fg-muted",
             )}
           >
             {completedTodayInView}
