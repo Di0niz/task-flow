@@ -3,9 +3,20 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { temporal } from "zundo";
 import { nanoid } from "nanoid";
 import { todayIso } from "../lib/utils";
-import { extractTags } from "../lib/tags";
 import { idbStorage } from "./storage";
+import { migrate, STORE_VERSION } from "./migrations";
+import {
+  collectDescendants,
+  finalizeTimer,
+  getContainer,
+  insertAt,
+  newTask,
+  readContainer,
+  removeFromArray,
+  scopeKey,
+} from "./treeOps";
 
+import { asProjectId, asTaskId } from "../types";
 import type {
   ActiveTimer,
   FilterState,
@@ -17,6 +28,9 @@ import type {
   Theme,
   ViewKey,
 } from "../types";
+
+// Re-export for backwards compatibility (used by some selectors / components).
+export { collectDescendants };
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                      */
@@ -107,124 +121,19 @@ interface AppState {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
-const scopeKey = (projectId: ProjectId | null) => projectId ?? "inbox";
-
-function newTask(partial: Partial<Task> & Pick<Task, "title" | "projectId">): Task {
-  const now = Date.now();
-  return {
-    id: nanoid(10),
-    title: partial.title,
-    notes: partial.notes,
-    completed: false,
-    projectId: partial.projectId,
-    parentId: partial.parentId ?? null,
-    childrenIds: [],
-    tags: partial.tags ?? [],
-    collapsed: false,
-    sessions: [],
-    dueDate: partial.dueDate,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function removeFromArray<T>(arr: T[], value: T): T[] {
-  const i = arr.indexOf(value);
-  if (i === -1) return arr;
-  const next = arr.slice();
-  next.splice(i, 1);
-  return next;
-}
-
-function insertAt<T>(arr: T[], index: number, value: T): T[] {
-  const next = arr.slice();
-  const i = Math.max(0, Math.min(index, next.length));
-  next.splice(i, 0, value);
-  return next;
-}
-
-/** Parent array (either a parent's childrenIds or a root array) containing id. */
-function getContainer(
-  state: AppState,
-  id: TaskId,
-): { kind: "parent"; parentId: TaskId } | { kind: "root"; scope: string } | null {
-  const task = state.tasks[id];
-  if (!task) return null;
-  if (task.parentId) {
-    return { kind: "parent", parentId: task.parentId };
-  }
-  return { kind: "root", scope: scopeKey(task.projectId) };
-}
-
-function readContainer(state: AppState, id: TaskId): TaskId[] {
-  const c = getContainer(state, id);
-  if (!c) return [];
-  if (c.kind === "parent") return state.tasks[c.parentId]?.childrenIds ?? [];
-  return state.roots[c.scope] ?? [];
-}
-
-/** Collect descendant ids (excluding the root). */
-export function collectDescendants(
-  tasks: Record<TaskId, Task>,
-  rootId: TaskId,
-): TaskId[] {
-  const out: TaskId[] = [];
-  const stack = [...(tasks[rootId]?.childrenIds ?? [])];
-  while (stack.length) {
-    const id = stack.pop()!;
-    out.push(id);
-    const t = tasks[id];
-    if (t) stack.push(...t.childrenIds);
-  }
-  return out;
-}
-
-/**
- * Close the active timer and append its TimerSession to the owning task.
- * No-op (with the same shape) if there is no active timer or zero elapsed.
- */
-function finalizeTimer(
-  tasks: Record<TaskId, Task>,
-  activeTimer: ActiveTimer | null,
-  endedAt: number,
-): { tasks: Record<TaskId, Task>; activeTimer: ActiveTimer | null } {
-  if (!activeTimer) return { tasks, activeTimer: null };
-  const t = tasks[activeTimer.taskId];
-  if (!t) return { tasks, activeTimer: null };
-  const durationMs = Math.max(0, endedAt - activeTimer.startedAt);
-  if (durationMs === 0) return { tasks, activeTimer: null };
-  const session: TimerSession = {
-    id: nanoid(8),
-    startedAt: activeTimer.startedAt,
-    endedAt,
-    durationMs,
-  };
-  return {
-    tasks: {
-      ...tasks,
-      [t.id]: { ...t, sessions: [...t.sessions, session] },
-    },
-    activeTimer: null,
-  };
-}
-
-/* -------------------------------------------------------------------------- */
 /*  Seed data                                                                  */
 /* -------------------------------------------------------------------------- */
 
 function seed(): Pick<AppState, "tasks" | "projects" | "roots" | "view"> {
   const p1: Project = {
-    id: nanoid(8),
+    id: asProjectId(nanoid(8)),
     name: "Payment gate",
     color: "indigo",
     archived: false,
     createdAt: Date.now(),
   };
   const p2: Project = {
-    id: nanoid(8),
+    id: asProjectId(nanoid(8)),
     name: "Здоровье",
     color: "emerald",
     archived: false,
@@ -410,7 +319,7 @@ export const useAppStore = create<AppState>()(
           }
 
           const nextTasks: Record<TaskId, Task> = {};
-          for (const [k, v] of Object.entries(tasksBase)) {
+          for (const [k, v] of Object.entries(tasksBase) as [TaskId, Task][]) {
             if (toRemove.has(k)) continue;
             nextTasks[k] = {
               ...v,
@@ -444,14 +353,16 @@ export const useAppStore = create<AppState>()(
       duplicateTask(id) {
         const src = get().tasks[id];
         if (!src) return null;
-        let newRootId: TaskId = "";
+        let newRootId: TaskId | null = null;
         set((state) => {
           const nextTasks: Record<TaskId, Task> = { ...state.tasks };
-          const recurse = (tid: TaskId, newParent: TaskId | null): TaskId => {
+          const recurse = (tid: TaskId, newParent: TaskId | null): TaskId | null => {
             const t = state.tasks[tid];
-            if (!t) return "";
-            const nid = nanoid(10);
-            const clonedChildren = t.childrenIds.map((cid) => recurse(cid, nid));
+            if (!t) return null;
+            const nid = asTaskId(nanoid(10));
+            const clonedChildren = t.childrenIds
+              .map((cid) => recurse(cid, nid))
+              .filter((x): x is TaskId => x !== null);
             nextTasks[nid] = {
               ...t,
               id: nid,
@@ -465,6 +376,7 @@ export const useAppStore = create<AppState>()(
             return nid;
           };
           newRootId = recurse(id, src.parentId);
+          if (!newRootId) return state;
 
           if (src.parentId) {
             const parent = nextTasks[src.parentId];
@@ -578,7 +490,7 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const task = state.tasks[id];
           if (!task) return state;
-          const container = readContainer(state, id);
+          const container = readContainer(state.tasks, state.roots, id);
           const idx = container.indexOf(id);
           if (idx <= 0) return state; // need a previous sibling
           const prevId = container[idx - 1];
@@ -601,7 +513,7 @@ export const useAppStore = create<AppState>()(
             tasks: { ...state.tasks, [prev.id]: nextPrev, [id]: nextTask },
           };
 
-          const c = getContainer(state, id);
+          const c = getContainer(state.tasks, id);
           if (c?.kind === "parent") {
             nextState.tasks[c.parentId] = {
               ...nextState.tasks[c.parentId],
@@ -661,9 +573,9 @@ export const useAppStore = create<AppState>()(
 
       moveTaskUp(id) {
         set((state) => {
-          const c = getContainer(state, id);
+          const c = getContainer(state.tasks, id);
           if (!c) return state;
-          const arr = readContainer(state, id);
+          const arr = readContainer(state.tasks, state.roots, id);
           const i = arr.indexOf(id);
           if (i <= 0) return state;
           const next = arr.slice();
@@ -683,9 +595,9 @@ export const useAppStore = create<AppState>()(
 
       moveTaskDown(id) {
         set((state) => {
-          const c = getContainer(state, id);
+          const c = getContainer(state.tasks, id);
           if (!c) return state;
-          const arr = readContainer(state, id);
+          const arr = readContainer(state.tasks, state.roots, id);
           const i = arr.indexOf(id);
           if (i < 0 || i >= arr.length - 1) return state;
           const next = arr.slice();
@@ -713,13 +625,13 @@ export const useAppStore = create<AppState>()(
           if (newParentId && (desc.has(newParentId) || newParentId === id)) return state;
 
           // Remove from current location
-          const oldContainer = readContainer(state, id);
+          const oldContainer = readContainer(state.tasks, state.roots, id);
           const filteredOld = removeFromArray(oldContainer, id);
 
           const nextTasks = { ...state.tasks };
           const nextRoots: Record<string, TaskId[]> = { ...state.roots };
 
-          const oldC = getContainer(state, id);
+          const oldC = getContainer(state.tasks, id);
           if (oldC?.kind === "parent") {
             nextTasks[oldC.parentId] = {
               ...nextTasks[oldC.parentId],
@@ -771,7 +683,7 @@ export const useAppStore = create<AppState>()(
       /* ---- projects ---- */
       addProject(name, color) {
         const p: Project = {
-          id: nanoid(8),
+          id: asProjectId(nanoid(8)),
           name,
           color,
           archived: false,
@@ -972,58 +884,10 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "taskflow.v1",
-      version: 5,
+      version: STORE_VERSION,
       storage: createJSONStorage(() => idbStorage),
-      migrate: (persisted: unknown, version: number) => {
-        const s = (persisted ?? {}) as Partial<AppState> & {
-          sessions?: unknown;
-          pomodoro?: unknown;
-          pomodoroSettings?: unknown;
-        };
-        if (version < 2) {
-          s.filter = { ...(s.filter ?? { tag: null, search: "" }), showCompleted: true };
-        }
-        if (version < 3 && s.tasks) {
-          const nextTasks: Record<TaskId, Task> = {};
-          for (const [tid, t] of Object.entries(s.tasks) as [TaskId, Task][]) {
-            if (!t || typeof t.title !== "string" || !t.title.includes("#")) {
-              nextTasks[tid] = t;
-              continue;
-            }
-            const { title, tags } = extractTags(t.title);
-            const mergedTags = Array.from(new Set([...(t.tags ?? []), ...tags]));
-            nextTasks[tid] = { ...t, title, tags: mergedTags };
-          }
-          s.tasks = nextTasks;
-        }
-        if (version < 4) {
-          // Drop pomodoro-era fields entirely; introduce Task.sessions.
-          delete s.sessions;
-          delete s.pomodoro;
-          delete s.pomodoroSettings;
-          if (s.tasks) {
-            const nextTasks: Record<TaskId, Task> = {};
-            for (const [tid, raw] of Object.entries(s.tasks)) {
-              const t = raw as Task & {
-                secondsSpent?: number;
-                estimatePomodoros?: number;
-              };
-              const { secondsSpent: _s, estimatePomodoros: _e, ...rest } = t;
-              nextTasks[tid] = { ...rest, sessions: rest.sessions ?? [] };
-            }
-            s.tasks = nextTasks;
-          }
-        }
-        if (version < 5) {
-          // Hide completed by default, so ticking a task actually removes it
-          // from view. Users who want them visible can flip the Eye toggle.
-          s.filter = {
-            ...(s.filter ?? { tag: null, search: "" }),
-            showCompleted: false,
-          };
-        }
-        return s;
-      },
+      migrate: (persisted: unknown, version: number) =>
+        migrate(persisted, version) as Partial<AppState>,
       partialize: (state) => ({
         tasks: state.tasks,
         projects: state.projects,

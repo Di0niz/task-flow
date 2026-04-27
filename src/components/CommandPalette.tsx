@@ -35,12 +35,9 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const items: Item[] = useMemo(() => {
-    const out: Item[] = [];
-    const ql = q.toLowerCase().trim();
-
-    // Views
-    const views: Item[] = [
+  // Static list of view-targets — only changes when projects change.
+  const viewItems = useMemo<Item[]>(() => {
+    const items: Item[] = [
       {
         id: "v-today",
         label: "Перейти: Сегодня",
@@ -66,58 +63,77 @@ export function CommandPalette() {
         action: () => setView({ kind: "smart", id: "logbook" }),
       },
     ];
-
     Object.values(projects).forEach((p) => {
-      views.push({
+      items.push({
         id: `v-project-${p.id}`,
         label: `Проект: ${p.name}`,
         icon: <Folder size={14} />,
         action: () => setView({ kind: "project", id: p.id }),
       });
     });
+    return items;
+  }, [projects, setView]);
 
-    // Tasks
-    const taskItems: Item[] = Object.values(tasks)
-      .filter((t) => !t.completed)
-      .filter((t) =>
-        ql ? (t.title + " " + t.tags.join(" ")).toLowerCase().includes(ql) : true,
-      )
-      .slice(0, 50)
-      .map((t) => ({
-        id: `t-${t.id}`,
-        label: t.title || "Без названия",
-        hint: t.tags.length ? t.tags.map((x) => `#${x}`).join(" ") : undefined,
-        icon: <Hash size={14} />,
-        action: () => zoomInto(t.id),
-      }));
+  // Indexed open tasks: each entry pairs an Item with a precomputed lowercase
+  // search haystack. Recomputed only when tasks change.
+  const taskIndex = useMemo(
+    () =>
+      Object.values(tasks)
+        .filter((t) => !t.completed)
+        .map((t) => ({
+          item: {
+            id: `t-${t.id}`,
+            label: t.title || "Без названия",
+            hint: t.tags.length ? t.tags.map((x) => `#${x}`).join(" ") : undefined,
+            icon: <Hash size={14} />,
+            action: () => zoomInto(t.id),
+          } satisfies Item,
+          haystack: (t.title + " " + t.tags.join(" ")).toLowerCase(),
+          startTimerAction: () => startTimer(t.id),
+          rawTitle: t.title || "Задача",
+        })),
+    [tasks, zoomInto, startTimer],
+  );
 
-    // Timer actions
-    const timerItems: Item[] = Object.values(tasks)
-      .filter((t) => !t.completed)
-      .filter((t) => (ql ? ("таймер " + t.title).toLowerCase().includes(ql) : false))
-      .slice(0, 10)
-      .map((t) => ({
-        id: `tm-${t.id}`,
-        label: `Запустить таймер: ${t.title || "Задача"}`,
-        icon: <Play size={14} />,
-        action: () => startTimer(t.id),
-      }));
+  // Filter on each keystroke without rebuilding the full task list.
+  const items: Item[] = useMemo(() => {
+    const ql = q.toLowerCase().trim();
+
+    const matchingTasks = ql
+      ? taskIndex.filter((x) => x.haystack.includes(ql))
+      : taskIndex;
+
+    const taskItems = matchingTasks.slice(0, ql ? 50 : 20).map((x) => x.item);
+
+    const timerItems: Item[] = [];
     if (activeTimer) {
-      timerItems.unshift({
+      timerItems.push({
         id: "tm-stop",
         label: "Остановить таймер",
         icon: <Square size={14} />,
         action: () => stopTimer(),
       });
     }
+    if (ql) {
+      taskIndex
+        .filter((x) => ("таймер " + x.haystack).includes(ql))
+        .slice(0, 10)
+        .forEach((x) => {
+          timerItems.push({
+            id: `tm-${x.item.id}`,
+            label: `Запустить таймер: ${x.rawTitle}`,
+            icon: <Play size={14} />,
+            action: x.startTimerAction,
+          });
+        });
+    }
 
     if (ql) {
-      out.push(...taskItems, ...timerItems, ...views.filter((v) => v.label.toLowerCase().includes(ql)));
-    } else {
-      out.push(...views, ...taskItems.slice(0, 20));
+      const filteredViews = viewItems.filter((v) => v.label.toLowerCase().includes(ql));
+      return [...taskItems, ...timerItems, ...filteredViews];
     }
-    return out;
-  }, [q, tasks, projects, activeTimer, setView, zoomInto, startTimer, stopTimer]);
+    return [...viewItems, ...taskItems];
+  }, [q, viewItems, taskIndex, activeTimer, stopTimer]);
 
   useEffect(() => {
     if (active >= items.length) setActive(Math.max(0, items.length - 1));

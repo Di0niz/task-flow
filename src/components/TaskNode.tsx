@@ -29,7 +29,7 @@ import {
 
 import { TagChip } from "./TagChip";
 import { extractTags } from "../lib/tags";
-import type { TaskId } from "../types";
+import { asTaskId, type TaskId } from "../types";
 
 const INDENT = 24; // px per depth level
 
@@ -272,8 +272,9 @@ export function TaskNode({ id, depth, autoFocus }: Props) {
         return;
       }
       if (el && caretAtStart(el)) {
-        const prevId = getAdjacentTaskId(id, -1);
-        if (!prevId) return;
+        const prevRaw = getAdjacentTaskId(id, -1);
+        if (!prevRaw) return;
+        const prevId = asTaskId(prevRaw);
         const prevTitle = useAppStore.getState().tasks[prevId]?.title ?? "";
         e.preventDefault();
         updateTask(id, { title: text });

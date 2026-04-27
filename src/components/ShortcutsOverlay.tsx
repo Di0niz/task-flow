@@ -1,50 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
-
-type Row = [string, string];
-type Group = { heading: string; rows: Row[] };
-
-const GROUPS: Group[] = [
-  {
-    heading: "Навигация",
-    rows: [
-      ["↑ / ↓ (в начале/конце строки)", "Фокус в соседнюю задачу"],
-      ["⌘K", "Палитра команд"],
-      ["⌘⇧.", "Zoom in"],
-      ["⌘⇧,", "Zoom out"],
-      ["⌘⇧F", "Режим фокуса для задачи"],
-      ["⌘/", "Эта шпаргалка"],
-    ],
-  },
-  {
-    heading: "Редактирование",
-    rows: [
-      ["Enter", "Новая задача ниже"],
-      ["Shift+Enter", "Перенос строки в задаче"],
-      ["⌘↩", "Отметить выполненной / снять"],
-      ["Tab / Shift+Tab", "Отступ / обратный отступ"],
-      ["Backspace (в начале)", "Слить с предыдущей задачей"],
-      ["Backspace (пустая)", "Удалить задачу"],
-      ["⌘D", "Дублировать задачу"],
-      ["⌘⇧↑ / ⌘⇧↓", "Переместить задачу"],
-      ["⌘⇧→ / ⌘⇧←", "Раскрыть / свернуть"],
-      ["Escape", "Снять фокус"],
-    ],
-  },
-  {
-    heading: "История",
-    rows: [
-      ["⌘Z", "Отменить"],
-      ["⌘⇧Z", "Повторить"],
-    ],
-  },
-  {
-    heading: "Таймер",
-    rows: [
-      ["⌥T", "Старт / стоп для задачи в фокусе"],
-    ],
-  },
-];
+import { groupedHotkeys } from "../lib/hotkeys";
 
 export function ShortcutsOverlay() {
   const open = useAppStore((s) => s.shortcutsOpen);
@@ -64,6 +20,8 @@ export function ShortcutsOverlay() {
 
   if (!open) return null;
 
+  const groups = groupedHotkeys();
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-start justify-center bg-black/10 px-4 pt-24 backdrop-blur-sm animate-fade-in"
@@ -75,19 +33,19 @@ export function ShortcutsOverlay() {
       >
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold">Горячие клавиши</h2>
-          <span className="text-[10px] text-fg-subtle">Esc чтобы закрыть</span>
+          <span className="text-[10px] text-fg-muted">Esc чтобы закрыть</span>
         </div>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <div key={g.heading}>
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-fg-muted">
                 {g.heading}
               </div>
               <dl className="space-y-1">
-                {g.rows.map(([key, desc]) => (
-                  <div key={key} className="flex items-baseline justify-between gap-3">
-                    <dt className="font-mono text-[11px] text-fg-muted">{key}</dt>
-                    <dd className="text-right text-[11px] text-fg">{desc}</dd>
+                {g.rows.map((hk) => (
+                  <div key={hk.id} className="flex items-baseline justify-between gap-3">
+                    <dt className="font-mono text-[11px] text-fg-muted">{hk.label}</dt>
+                    <dd className="text-right text-[11px] text-fg">{hk.description}</dd>
                   </div>
                 ))}
               </dl>

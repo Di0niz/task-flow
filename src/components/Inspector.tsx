@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { useAppStore, selectZoomedTaskId } from "../store/useAppStore";
 import { totalTaskMs } from "../lib/aggregate";
-import { formatDurationShort, parseDurationInput } from "../lib/time";
+import { formatDurationShort, formatRelative, parseDurationInput } from "../lib/time";
 import { useNowTick } from "../hooks/useNowTick";
 import { cn, todayIso } from "../lib/utils";
-import { PROJECT_COLORS, type TaskId } from "../types";
+import { projectColorHex, type TaskId } from "../types";
 
 const URL_ONLY_RE = /^https?:\/\/\S+$/;
 
@@ -59,9 +59,7 @@ export function Inspector() {
   const project = task.projectId ? projects[task.projectId] : null;
   const parent = task.parentId ? tasks[task.parentId] : null;
   const todayFlagged = task.todayDate === todayIso();
-  const projectHex = project
-    ? (PROJECT_COLORS.find((c) => c.name === project.color)?.hex ?? "#888")
-    : null;
+  const projectHex = project ? projectColorHex(project.color) : null;
   const isUrl = URL_ONLY_RE.test(task.title.trim());
 
   const commitNotes = () => {
@@ -130,7 +128,7 @@ export function Inspector() {
         <div className="flex items-start gap-2">
           <AutoSizeTextarea
             key={task.id}
-            defaultValue={task.title}
+            value={task.title}
             placeholder="Без названия"
             className="flex-1 min-w-0 resize-none rounded bg-transparent px-1.5 py-1 text-[13px] leading-[20px] text-fg outline-none placeholder:text-fg-subtle hover:bg-bg-muted/60 focus:bg-bg-muted/70 transition-colors"
             onBlur={handleTitleBlur}
@@ -430,28 +428,41 @@ function SectionLabel({
   );
 }
 
+/**
+ * Uncontrolled-feel textarea that mirrors `value` from props when it changes
+ * externally and the field is not focused. Avoids the standard `defaultValue`
+ * stale-data trap when the same task is updated from another surface (row
+ * editor, drag-merge, etc).
+ */
 function AutoSizeTextarea({
-  defaultValue,
+  value,
   onBlur,
   className,
   placeholder,
 }: {
-  defaultValue: string;
+  value: string;
   onBlur(e: React.FocusEvent<HTMLTextAreaElement>): void;
   className?: string;
   placeholder?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Keep the textarea in sync with external value, but never clobber the user
+  // mid-edit (i.e., when it is focused).
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (document.activeElement !== el && el.value !== value) {
+      el.value = value;
+    }
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [defaultValue]);
+  }, [value]);
+
   return (
     <textarea
       ref={ref}
-      defaultValue={defaultValue}
+      defaultValue={value}
       rows={1}
       onInput={(e) => {
         const el = e.currentTarget;
@@ -465,18 +476,3 @@ function AutoSizeTextarea({
   );
 }
 
-function formatRelative(ts: number): string {
-  const delta = Date.now() - ts;
-  const mins = Math.floor(delta / 60_000);
-  if (mins < 1) return "только что";
-  if (mins < 60) return `${mins} мин назад`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} ч назад`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} дн назад`;
-  return new Date(ts).toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}

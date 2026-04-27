@@ -2,7 +2,10 @@ import { useMemo, useState, useRef } from "react";
 import { CalendarDays, Plus, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { parseTitleWithDate } from "../lib/parseDate";
+import { extractTags } from "../lib/tags";
 import type { ProjectId, TaskId } from "../types";
+
+const LIST_PREFIX_RE = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
 const INDENT = 24;
 
@@ -30,15 +33,9 @@ export function NewTaskInput({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const parseLine = (raw: string) => {
-    const stripped = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim();
-    const parts = stripped.split(/\s+/);
-    const tags: string[] = [];
-    const titleParts: string[] = [];
-    parts.forEach((p) => {
-      if (p.startsWith("#") && p.length > 1) tags.push(p.slice(1));
-      else titleParts.push(p);
-    });
-    return { title: titleParts.join(" ") || stripped, tags };
+    const stripped = raw.replace(LIST_PREFIX_RE, "").trim();
+    const { title, tags } = extractTags(stripped);
+    return { title: title || stripped, tags };
   };
 
   // Live date preview for the single-line case. Skipped if the user explicitly

@@ -7,7 +7,7 @@ import { Breadcrumbs } from "./Breadcrumbs";
 import { Stats } from "./Stats";
 import { TagChip } from "./TagChip";
 import { cn, startOfTodayMs, todayIso } from "../lib/utils";
-import { PROJECT_COLORS, type TaskId } from "../types";
+import { projectColorHex, type ProjectId, type TaskId } from "../types";
 
 export function TaskView() {
   const view = useAppStore((s) => s.view);
@@ -171,7 +171,7 @@ export function TaskView() {
   let title = "Сегодня";
   let subtitle: string | undefined = "Что нужно сделать именно сегодня";
   let allowInsert = true;
-  let projectIdForInsert: string | null = null;
+  let projectIdForInsert: ProjectId | null = null;
   let parentIdForInsert: TaskId | null = null;
 
   if (zoomedId) {
@@ -368,7 +368,7 @@ function TodayGroups({ ids }: { ids: TaskId[] }) {
   const projects = useAppStore((s) => s.projects);
 
   const groups = useMemo(() => {
-    const map = new Map<string | null, TaskId[]>();
+    const map = new Map<ProjectId | null, TaskId[]>();
     ids.forEach((id) => {
       const t = tasks[id];
       if (!t) return;
@@ -390,9 +390,7 @@ function TodayGroups({ ids }: { ids: TaskId[] }) {
     <div className="flex flex-col gap-5">
       {groups.map(([projectId, groupIds]) => {
         const project = projectId ? projects[projectId] : null;
-        const hex = project
-          ? PROJECT_COLORS.find((c) => c.name === project.color)?.hex ?? "#888"
-          : null;
+        const hex = project ? projectColorHex(project.color) : null;
         const name = project?.name ?? "Входящие";
         return (
           <section key={projectId ?? "inbox"}>

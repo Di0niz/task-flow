@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import { useAppStore } from "../store/useAppStore";
+import { cssEscape } from "../lib/dom";
 
 const PALETTE = [
   "#6366f1", // indigo
@@ -124,10 +125,3 @@ function findOrigin(taskId: string): { x: number; y: number } {
   };
 }
 
-function cssEscape(value: string): string {
-  // Modern browsers have CSS.escape; fall back for safety.
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/["\\]/g, "\\$&");
-}

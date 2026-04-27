@@ -1,3 +1,5 @@
+import { cssEscape } from "./dom";
+
 export function caretAtStart(el: HTMLElement): boolean {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return false;
@@ -62,7 +64,7 @@ export function getAllEditables(): HTMLElement[] {
 }
 
 export function getEditableFor(id: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(id)}"]`);
+  return document.querySelector<HTMLElement>(`[data-task-id="${cssEscape(id)}"]`);
 }
 
 export function focusTaskById(id: string, offset: number | "end" | "start" = "end"): boolean {

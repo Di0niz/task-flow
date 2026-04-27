@@ -37,6 +37,25 @@ export function formatDurationShort(ms: number): string {
 }
 
 /**
+ * Human-friendly relative time, Russian. `5 мин назад`, `2 ч назад`, then date.
+ */
+export function formatRelative(ts: number, now: number = Date.now()): string {
+  const delta = now - ts;
+  const mins = Math.floor(delta / 60_000);
+  if (mins < 1) return "только что";
+  if (mins < 60) return `${mins} мин назад`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} дн назад`;
+  return new Date(ts).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
  * Parse a user-entered duration string into milliseconds.
  * Supports:
  *   - `45s`, `30sec`
@@ -71,7 +90,9 @@ export function parseDurationInput(raw: string): number | null {
   //   h / ч   — hours
   //   m / min / мин — minutes
   //   s / sec / с   — seconds
-  const unitRe = /(\d+(?:\.\d+)?)\s*(h|ч|min|мин|m|sec|с|s)\b/g;
+  // Word boundaries (`\b`) misbehave around Cyrillic and adjacent digits, so we
+  // anchor with a lookahead that allows EOS, whitespace, or another digit.
+  const unitRe = /(\d+(?:\.\d+)?)\s*(min|мин|sec|h|ч|m|с|s)(?=\s|\d|$)/g;
   const tokens = input.match(unitRe);
   if (!tokens) return null;
 
@@ -85,7 +106,7 @@ export function parseDurationInput(raw: string): number | null {
 
   let totalMs = 0;
   for (const token of tokens) {
-    const m = token.match(/(\d+(?:\.\d+)?)\s*(h|ч|min|мин|m|sec|с|s)/)!;
+    const m = token.match(/(\d+(?:\.\d+)?)\s*(min|мин|sec|h|ч|m|с|s)/)!;
     const value = parseFloat(m[1]);
     const unit = m[2];
     if (unit === "h" || unit === "ч") totalMs += value * 3_600_000;

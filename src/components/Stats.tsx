@@ -1,9 +1,18 @@
 import { useMemo } from "react";
 import { CalendarDays, CheckCircle2, Target, Timer } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { formatDuration } from "../lib/utils";
-import { cn } from "../lib/utils";
-import type { ProjectId, TaskId } from "../types";
+import { formatDuration, cn } from "../lib/utils";
+import { projectColorHex, type ProjectId, type TaskId } from "../types";
+
+/** Returns the start of the ISO week (Monday 00:00 local time) for a given Date. */
+function startOfWeek(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  // JS: Sunday=0, Monday=1, ..., Saturday=6. ISO week starts on Monday.
+  const dayOfWeek = (out.getDay() + 6) % 7; // 0 for Mon, 6 for Sun
+  out.setDate(out.getDate() - dayOfWeek);
+  return out;
+}
 
 interface FlatSession {
   taskId: TaskId;
@@ -33,27 +42,29 @@ export function Stats() {
     return out;
   }, [tasks]);
 
-  const now = new Date();
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - today.getDay() + 1);
+  const todayMs = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, []);
+  const weekStartMs = useMemo(() => startOfWeek(new Date(todayMs)).getTime(), [todayMs]);
 
-  const todaySessions = sessions.filter((s) => s.startedAt >= today.getTime());
-  const weekSessions = sessions.filter((s) => s.startedAt >= weekStart.getTime());
+  const todaySessions = sessions.filter((s) => s.startedAt >= todayMs);
+  const weekSessions = sessions.filter((s) => s.startedAt >= weekStartMs);
 
   const completedToday = Object.values(tasks).filter(
-    (t) => t.completed && (t.completedAt ?? 0) >= today.getTime(),
+    (t) => t.completed && (t.completedAt ?? 0) >= todayMs,
   ).length;
 
   const focusToday = todaySessions.reduce((sum, s) => sum + s.durationSeconds, 0);
   const focusWeek = weekSessions.reduce((sum, s) => sum + s.durationSeconds, 0);
 
   const weekDays = useMemo(() => {
-    const days: { label: string; date: Date; seconds: number }[] = [];
+    const days: { label: string; dateMs: number; seconds: number }[] = [];
+    const baseDate = new Date(todayMs);
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - i);
       const end = new Date(d);
       end.setDate(d.getDate() + 1);
       const s = sessions
@@ -61,12 +72,12 @@ export function Stats() {
         .reduce((sum, x) => sum + x.durationSeconds, 0);
       days.push({
         label: d.toLocaleDateString("ru-RU", { weekday: "short" }),
-        date: d,
+        dateMs: d.getTime(),
         seconds: s,
       });
     }
     return days;
-  }, [sessions, today]);
+  }, [sessions, todayMs]);
 
   const maxDay = Math.max(1, ...weekDays.map((d) => d.seconds));
 
@@ -77,12 +88,18 @@ export function Stats() {
       acc[key] = (acc[key] ?? 0) + s.durationSeconds;
     });
     return Object.entries(acc)
-      .map(([id, seconds]) => ({
-        id,
-        name: id === "inbox" ? "Входящие" : (projects[id]?.name ?? "(удалено)"),
-        color: id === "inbox" ? "#64748b" : projectHex(projects[id]?.color),
-        seconds,
-      }))
+      .map(([id, seconds]) => {
+        if (id === "inbox") {
+          return { id, name: "Входящие", color: "#64748b", seconds };
+        }
+        const project = projects[id as ProjectId];
+        return {
+          id,
+          name: project?.name ?? "(удалено)",
+          color: projectColorHex(project?.color),
+          seconds,
+        };
+      })
       .sort((a, b) => b.seconds - a.seconds);
   }, [sessions, projects]);
 
@@ -197,19 +214,3 @@ function Card({
   );
 }
 
-function projectHex(color?: string): string {
-  const map: Record<string, string> = {
-    indigo: "#6366f1",
-    blue: "#3b82f6",
-    cyan: "#06b6d4",
-    emerald: "#10b981",
-    lime: "#84cc16",
-    amber: "#f59e0b",
-    orange: "#f97316",
-    rose: "#f43f5e",
-    pink: "#ec4899",
-    violet: "#8b5cf6",
-    slate: "#64748b",
-  };
-  return map[color ?? ""] ?? "#6366f1";
-}

@@ -1,5 +1,16 @@
-export type TaskId = string;
-export type ProjectId = string;
+declare const TaskIdBrand: unique symbol;
+declare const ProjectIdBrand: unique symbol;
+
+/**
+ * Branded ids — opaque to TypeScript, structurally still strings at runtime.
+ * Use the `asTaskId` / `asProjectId` factories at trust boundaries (nanoid,
+ * DOM dataset, dnd-kit) instead of bare `as` casts.
+ */
+export type TaskId = string & { readonly [TaskIdBrand]: never };
+export type ProjectId = string & { readonly [ProjectIdBrand]: never };
+
+export const asTaskId = (raw: string): TaskId => raw as TaskId;
+export const asProjectId = (raw: string): ProjectId => raw as ProjectId;
 
 export interface TimerSession {
   id: string;
@@ -69,3 +80,14 @@ export const PROJECT_COLORS = [
 ] as const;
 
 export type ProjectColorName = (typeof PROJECT_COLORS)[number]["name"];
+
+const DEFAULT_COLOR_HEX = "#6366f1";
+const COLOR_HEX_BY_NAME: Record<string, string> = Object.fromEntries(
+  PROJECT_COLORS.map((c) => [c.name, c.hex]),
+);
+
+/** Resolve a Project.color token to a hex string, with a sane fallback. */
+export function projectColorHex(color: string | undefined | null): string {
+  if (!color) return DEFAULT_COLOR_HEX;
+  return COLOR_HEX_BY_NAME[color] ?? DEFAULT_COLOR_HEX;
+}

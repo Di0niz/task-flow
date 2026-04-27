@@ -14,7 +14,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { PROJECT_COLORS, type ViewKey } from "../types";
+import { PROJECT_COLORS, projectColorHex, type ViewKey } from "../types";
 import { cn } from "../lib/utils";
 
 type IconComponent = React.ComponentType<{
@@ -234,7 +234,7 @@ export function Sidebar() {
           {Object.values(projects)
             .filter((p) => !p.archived)
             .map((p) => {
-              const colorHex = PROJECT_COLORS.find((c) => c.name === p.color)?.hex ?? "#888";
+              const colorHex = projectColorHex(p.color);
               const Dot: IconComponent = ({ size, className }) => {
                 const px = typeof size === "number" ? size - 2 : 10;
                 return (
@@ -265,11 +265,7 @@ export function Sidebar() {
                     "h-4 w-4 shrink-0 rounded-full ring-2 ring-transparent transition hover:ring-offset-1 hover:ring-offset-bg hover:ring-border-strong",
                     colorPickerOpen && "ring-offset-1 ring-offset-bg ring-fg",
                   )}
-                  style={{
-                    background:
-                      PROJECT_COLORS.find((c) => c.name === newColor)?.hex ??
-                      PROJECT_COLORS[0].hex,
-                  }}
+                  style={{ background: projectColorHex(newColor) }}
                   title="Выбрать цвет"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setColorPickerOpen((o) => !o)}

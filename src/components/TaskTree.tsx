@@ -9,6 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -18,10 +19,23 @@ import {
 
 import { TaskNode } from "./TaskNode";
 import { useAppStore } from "../store/useAppStore";
-import type { Task, TaskId } from "../types";
+import { asTaskId, type ProjectId, type Task, type TaskId } from "../types";
 
 interface Props {
   rootIds: TaskId[];
+}
+
+/**
+ * Resolve a dnd-kit `UniqueIdentifier` to a known TaskId. Returns `null` for
+ * unknown ids (deleted tasks) — never silently casts to a TaskId that has no
+ * record in the store.
+ */
+function resolveTaskId(
+  raw: UniqueIdentifier,
+  tasks: Record<TaskId, Task>,
+): TaskId | null {
+  const id = asTaskId(String(raw));
+  return tasks[id] ? id : null;
 }
 
 export function TaskTree({ rootIds }: Props) {
@@ -39,7 +53,7 @@ export function TaskTree({ rootIds }: Props) {
   );
 
   const onDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as TaskId);
+    setActiveId(resolveTaskId(event.active.id, tasks));
   };
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -47,58 +61,52 @@ export function TaskTree({ rootIds }: Props) {
     setActiveId(null);
     if (!over || over.id === active.id) return;
 
-    const activeTask = tasks[active.id as TaskId];
-    const overTask = tasks[over.id as TaskId];
-    if (!activeTask || !overTask) return;
+    const activeTaskId = resolveTaskId(active.id, tasks);
+    const overTaskId = resolveTaskId(over.id, tasks);
+    if (!activeTaskId || !overTaskId) return;
 
-    // Drop in same parent → reorder
+    const activeTask = tasks[activeTaskId];
+    const overTask = tasks[overTaskId];
+
+    // Same parent → reorder within container.
     if (activeTask.parentId === overTask.parentId) {
-      // Siblings (share parent or both root in same scope)
       if (activeTask.parentId) {
         const siblings = tasks[activeTask.parentId].childrenIds;
-        const newIndex = siblings.indexOf(over.id as TaskId);
         moveTask({
-          id: active.id as TaskId,
+          id: activeTaskId,
           newParentId: activeTask.parentId,
-          newIndex,
+          newIndex: siblings.indexOf(overTaskId),
         });
         return;
       }
-      // Root level of same project
+      // Both are roots in the same scope.
       if (activeTask.projectId === overTask.projectId) {
-        const state = useAppStore.getState();
-        const scope = activeTask.projectId ?? "inbox";
-        const list = state.roots[scope] ?? [];
-        const newIndex = list.indexOf(over.id as TaskId);
+        const list = readScopeRoots(activeTask.projectId);
         moveTask({
-          id: active.id as TaskId,
+          id: activeTaskId,
           newParentId: null,
           newProjectId: activeTask.projectId,
-          newIndex,
+          newIndex: list.indexOf(overTaskId),
         });
         return;
       }
     }
 
-    // Cross-container move → drop active as sibling of overTask, inserted just before it
-    const state = useAppStore.getState();
+    // Cross-container — drop next to overTask within overTask's container.
     if (overTask.parentId) {
-      const siblings = state.tasks[overTask.parentId].childrenIds;
-      const newIndex = siblings.indexOf(over.id as TaskId);
+      const siblings = useAppStore.getState().tasks[overTask.parentId].childrenIds;
       moveTask({
-        id: active.id as TaskId,
+        id: activeTaskId,
         newParentId: overTask.parentId,
-        newIndex,
+        newIndex: siblings.indexOf(overTaskId),
       });
     } else {
-      const scope = overTask.projectId ?? "inbox";
-      const list = state.roots[scope] ?? [];
-      const newIndex = list.indexOf(over.id as TaskId);
+      const list = readScopeRoots(overTask.projectId);
       moveTask({
-        id: active.id as TaskId,
+        id: activeTaskId,
         newParentId: null,
         newProjectId: overTask.projectId,
-        newIndex,
+        newIndex: list.indexOf(overTaskId),
       });
     }
   };
@@ -130,4 +138,9 @@ export function TaskTree({ rootIds }: Props) {
       </DragOverlay>
     </DndContext>
   );
+}
+
+function readScopeRoots(projectId: ProjectId | null): TaskId[] {
+  const scope = projectId ?? "inbox";
+  return useAppStore.getState().roots[scope] ?? [];
 }
